@@ -8,6 +8,10 @@ TEST_COUNT?=1
 
 default: build
 
+release:
+	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o release/linux_amd64/terraform-provider-aws_v2.66.0_x4
+	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o release/darwin_amd64/terraform-provider-aws_v2.66.0_x4
+
 build: fmtcheck
 	go install
 
@@ -183,5 +187,5 @@ ifeq (,$(wildcard $(GOPATH)/src/$(WEBSITE_REPO)))
 endif
 	@$(MAKE) -C $(GOPATH)/src/$(WEBSITE_REPO) website-provider-test PROVIDER_PATH=$(shell pwd) PROVIDER_NAME=$(PKG_NAME)
 
-.PHONY: awsproviderlint build gen golangci-lint sweep test testacc fmt fmtcheck lint tools test-compile website website-link-check website-lint website-lint-fix website-test depscheck docscheck
+.PHONY: awsproviderlint release build gen golangci-lint sweep test testacc fmt fmtcheck lint tools test-compile website website-link-check website-lint website-lint-fix website-test depscheck docscheck
 

@@ -1,0 +1,2 @@
+release/linux_amd64/terraform-provider-aws_v2.66.0_x4 filter=lfs diff=lfs merge=lfs -text
+release/darwin_amd64/terraform-provider-aws_v2.66.0_x4 filter=lfs diff=lfs merge=lfs -text

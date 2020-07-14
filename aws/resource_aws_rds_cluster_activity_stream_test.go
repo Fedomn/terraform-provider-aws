@@ -7,24 +7,27 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/rds"
+	"github.com/hashicorp/terraform-plugin-sdk/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/terraform"
 )
 
-func testAccAWSClusterActivityStreamConfig() string {
-	return fmt.Sprintf(`
-resource "aws_rds_cluster_activity_stream" "default" {
-  arn  								= "database-1"
-  apply_immediately  	= true
-  kms_key_id 					= "db-kms-id"
-  mode         				= "async"
-}
-`)
+func init() {
+	resource.AddTestSweepers("aws_rds_cluster_activity_stream", &resource.Sweeper{
+		Name: "aws_rds_cluster_activity_stream",
+		F:    func(region string) error { return nil },
+		Dependencies: []string{
+			"aws_kms_key",
+			"aws_kinesis_stream",
+			"aws_rds_cluster",
+		},
+	})
 }
 
 func TestAccAWSRDSClusterActivityStream(t *testing.T) {
 	var dbCluster rds.DBCluster
+	rName := acctest.RandString(5)
 	resourceName := "aws_rds_cluster_activity_stream.default"
 
 	resource.ParallelTest(t, resource.TestCase{
@@ -33,7 +36,7 @@ func TestAccAWSRDSClusterActivityStream(t *testing.T) {
 		CheckDestroy: testAccCheckAWSClusterActivityStreamDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccAWSClusterActivityStreamConfig(),
+				Config: testAccAWSClusterActivityStreamConfig(rName),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckAWSRDSClusterActivityStreamExists(resourceName, &dbCluster),
 					testAccCheckAWSRDSClusterActivityStreamAttributes(&dbCluster),
@@ -92,13 +95,17 @@ func testAccCheckAWSRDSClusterActivityStreamAttributes(v *rds.DBCluster) resourc
 		if aws.StringValue(v.ActivityStreamKmsKeyId) == "" {
 			return fmt.Errorf("empty RDS Cluster activity stream kms key id")
 		}
+
 		if aws.StringValue(v.ActivityStreamKinesisStreamName) == "" {
 			return fmt.Errorf("empty RDS Cluster activity stream kinesis stream name")
 		}
 
-		if aws.StringValue(v.ActivityStreamStatus) != "sync" &&
-			aws.StringValue(v.ActivityStreamStatus) != "async" {
-			return fmt.Errorf("Incorrect activity stream status: expected: sync or async, got: %s", aws.StringValue(v.ActivityStreamStatus))
+		if aws.StringValue(v.ActivityStreamStatus) != rds.ActivityStreamStatusStarted {
+			return fmt.Errorf("incorrect activity stream status: expected: %s, got: %s", rds.ActivityStreamStatusStarted, aws.StringValue(v.ActivityStreamStatus))
+		}
+
+		if aws.StringValue(v.ActivityStreamMode) != "sync" && aws.StringValue(v.ActivityStreamMode) != "async" {
+			return fmt.Errorf("incorrect activity stream mode: expected: sync or async, got: %s", aws.StringValue(v.ActivityStreamMode))
 		}
 
 		return nil
@@ -126,7 +133,7 @@ func testAccCheckAWSClusterActivityStreamDestroyWithProvider(s *terraform.State,
 
 		if err == nil {
 			if len(resp.DBClusters) != 0 &&
-				*resp.DBClusters[0].ActivityStreamStatus != rds.ActivityStreamStatusStopping {
+				*resp.DBClusters[0].ActivityStreamStatus != rds.ActivityStreamStatusStopped {
 				return fmt.Errorf("DB Cluster %s Activity Stream still exists", rs.Primary.ID)
 			}
 		}
@@ -142,4 +149,44 @@ func testAccCheckAWSClusterActivityStreamDestroyWithProvider(s *terraform.State,
 	}
 
 	return nil
+}
+
+func testAccAWSClusterActivityStreamConfig(rName string) string {
+	return fmt.Sprintf(`
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+resource "aws_kms_key" "default" {
+	description             = "tf-testacc-kms-key-%[1]s"
+  deletion_window_in_days = 7
+}
+
+resource "aws_rds_cluster" "default" {
+  cluster_identifier              = "tf-testacc-aurora-cluster-%[1]s"
+  engine                  				= "aurora-postgresql"
+  engine_version                  = "10.11"
+  availability_zones              = ["${data.aws_availability_zones.available.names[0]}"]
+  database_name                   = "mydb"
+  master_username                 = "foo"
+  master_password                 = "mustbeeightcharaters"
+  db_cluster_parameter_group_name = "default.aurora-postgresql10"
+  skip_final_snapshot             = true
+  deletion_protection             = false
+}
+
+resource "aws_rds_cluster_instance" "default" {
+	identifier         = "tf-testacc-aurora-instance-%[1]s"
+  cluster_identifier = "${aws_rds_cluster.default.cluster_identifier}"
+  engine             = "${aws_rds_cluster.default.engine}"
+  instance_class     = "db.r5.large"
+}
+
+resource "aws_rds_cluster_activity_stream" "default" {
+  arn  								= "${aws_rds_cluster.default.arn}"
+  apply_immediately  	= true
+  kms_key_id 					= "${aws_kms_key.default.arn}"
+  mode         				= "async"
+}
+`, rName)
 }

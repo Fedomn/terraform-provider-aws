@@ -734,6 +734,7 @@ func Provider() terraform.ResourceProvider {
 			"aws_ram_resource_share_accepter":                         resourceAwsRamResourceShareAccepter(),
 			"aws_rds_cluster":                                         resourceAwsRDSCluster(),
 			"aws_rds_cluster_endpoint":                                resourceAwsRDSClusterEndpoint(),
+			"aws_rds_cluster_activity_stream":                         resourceAwsRDSClusterActivityStream(),
 			"aws_rds_cluster_instance":                                resourceAwsRDSClusterInstance(),
 			"aws_rds_cluster_parameter_group":                         resourceAwsRDSClusterParameterGroup(),
 			"aws_rds_global_cluster":                                  resourceAwsRDSGlobalCluster(),

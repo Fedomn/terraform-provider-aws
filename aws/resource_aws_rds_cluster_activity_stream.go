@@ -14,7 +14,7 @@ import (
 
 const (
 	AWSRDSClusterActivityStreamRetryDelay      = 5 * time.Second
-	AWSRDSClusterActivityStreamRetryMinTimeout = 10 * time.Second
+	AWSRDSClusterActivityStreamRetryMinTimeout = 3 * time.Second
 )
 
 func resourceAwsRDSClusterActivityStream() *schema.Resource {
@@ -26,6 +26,12 @@ func resourceAwsRDSClusterActivityStream() *schema.Resource {
 		Importer: &schema.ResourceImporter{
 			State: schema.ImportStatePassthrough,
 		},
+
+		Timeouts: &schema.ResourceTimeout{
+			Create: schema.DefaultTimeout(120 * time.Minute),
+			Delete: schema.DefaultTimeout(120 * time.Minute),
+		},
+
 		Schema: map[string]*schema.Schema{
 			"arn": {
 				Type:     schema.TypeString,
@@ -77,7 +83,7 @@ func resourceAwsRDSClusterActivityStreamCreate(d *schema.ResourceData, meta inte
 
 	d.SetId(resourceArn)
 
-	err = resourceAwsRDSClusterActivityStreamWaitForStarted(d.Timeout(schema.TimeoutDelete), d.Id(), conn)
+	err = resourceAwsRDSClusterActivityStreamWaitForStarted(d.Timeout(schema.TimeoutCreate), d.Id(), conn)
 	if err != nil {
 		return err
 	}
@@ -110,9 +116,8 @@ func resourceAwsRDSClusterActivityStreamRead(d *schema.ResourceData, meta interf
 	}
 
 	var dbc *rds.DBCluster
-	// TODO this may have a bug
 	for _, c := range resp.DBClusters {
-		if aws.StringValue(c.DBClusterIdentifier) == d.Id() {
+		if aws.StringValue(c.DBClusterArn) == d.Id() {
 			dbc = c
 			break
 		}

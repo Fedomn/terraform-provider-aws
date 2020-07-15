@@ -12,6 +12,9 @@ release:
 	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o release/linux_amd64/terraform-provider-aws_v2.66.0_x4
 	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o release/darwin_amd64/terraform-provider-aws_v2.66.0_x4
 
+debuglog:
+	grep -E "TRACE|DEBUG|INFO|WARN|ERROR" test.log | grep -v "aws-sdk-go"
+
 build: fmtcheck
 	go install
 

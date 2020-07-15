@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/rds"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
@@ -43,13 +42,15 @@ func TestAccAWSRDSClusterActivityStream_basic(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "arn"),
 					resource.TestCheckResourceAttrSet(resourceName, "kms_key_id"),
 					resource.TestCheckResourceAttrSet(resourceName, "kinesis_stream_name"),
-					resource.TestCheckResourceAttr(resourceName, "mode", "started"),
+					resource.TestCheckResourceAttr(resourceName, "mode", "async"),
+					resource.TestCheckResourceAttr(resourceName, "apply_immediately", "true"),
 				),
 			},
 			{
-				ResourceName:      resourceName,
-				ImportState:       true,
-				ImportStateVerify: true,
+				ResourceName:            resourceName,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"apply_immediately"},
 			},
 		},
 	})
@@ -80,8 +81,7 @@ func testAccCheckAWSRDSClusterActivityStreamExistsWithProvider(resourceName stri
 			return err
 		}
 
-		if len(response.DBClusters) != 1 ||
-			*response.DBClusters[0].DBClusterArn != rs.Primary.ID {
+		if len(response.DBClusters) != 1 || *response.DBClusters[0].DBClusterArn != rs.Primary.ID {
 			return fmt.Errorf("DBCluster not found")
 		}
 
@@ -129,7 +129,6 @@ func testAccCheckAWSClusterActivityStreamDestroyWithProvider(s *terraform.State,
 			continue
 		}
 
-		// Try to find the Group
 		var err error
 		resp, err := conn.DescribeDBClusters(
 			&rds.DescribeDBClustersInput{
@@ -144,10 +143,8 @@ func testAccCheckAWSClusterActivityStreamDestroyWithProvider(s *terraform.State,
 		}
 
 		// Return nil if the cluster is already destroyed
-		if awsErr, ok := err.(awserr.Error); ok {
-			if awsErr.Code() == "DBClusterNotFoundFault" {
-				return nil
-			}
+		if isAWSErr(err, rds.ErrCodeDBClusterNotFoundFault, "") {
+			return nil
 		}
 
 		return err
@@ -171,7 +168,7 @@ resource "aws_rds_cluster" "test" {
   cluster_identifier              = "tf-testacc-aurora-cluster-%[1]s"
   engine                  				= "aurora-postgresql"
   engine_version                  = "10.11"
-  availability_zones              = ["${data.aws_availability_zones.available.names[0]}"]
+	availability_zones  						= ["${data.aws_availability_zones.available.names[0]}", "${data.aws_availability_zones.available.names[1]}", "${data.aws_availability_zones.available.names[2]}"]
   database_name                   = "mydb"
   master_username                 = "foo"
   master_password                 = "mustbeeightcharaters"
@@ -190,8 +187,10 @@ resource "aws_rds_cluster_instance" "test" {
 resource "aws_rds_cluster_activity_stream" "test" {
   arn  								= "${aws_rds_cluster.test.arn}"
   apply_immediately  	= true
-  kms_key_id 					= "${aws_kms_key.test.arn}"
+  kms_key_id 					= "${aws_kms_key.test.key_id}"
   mode         				= "async"
+	
+	depends_on = ["aws_rds_cluster.test", "aws_rds_cluster_instance.test"]
 }
 `, rName)
 }

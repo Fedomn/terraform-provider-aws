@@ -25,10 +25,10 @@ func init() {
 	})
 }
 
-func TestAccAWSRDSClusterActivityStream(t *testing.T) {
+func TestAccAWSRDSClusterActivityStream_basic(t *testing.T) {
 	var dbCluster rds.DBCluster
 	rName := acctest.RandString(5)
-	resourceName := "aws_rds_cluster_activity_stream.default"
+	resourceName := "aws_rds_cluster_activity_stream.test"
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:     func() { testAccPreCheck(t) },
@@ -45,6 +45,11 @@ func TestAccAWSRDSClusterActivityStream(t *testing.T) {
 					resource.TestCheckResourceAttrSet(resourceName, "kinesis_stream_name"),
 					resource.TestCheckResourceAttr(resourceName, "mode", "started"),
 				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
 		},
 	})
@@ -157,12 +162,12 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
-resource "aws_kms_key" "default" {
+resource "aws_kms_key" "test" {
 	description             = "tf-testacc-kms-key-%[1]s"
   deletion_window_in_days = 7
 }
 
-resource "aws_rds_cluster" "default" {
+resource "aws_rds_cluster" "test" {
   cluster_identifier              = "tf-testacc-aurora-cluster-%[1]s"
   engine                  				= "aurora-postgresql"
   engine_version                  = "10.11"
@@ -175,17 +180,17 @@ resource "aws_rds_cluster" "default" {
   deletion_protection             = false
 }
 
-resource "aws_rds_cluster_instance" "default" {
+resource "aws_rds_cluster_instance" "test" {
 	identifier         = "tf-testacc-aurora-instance-%[1]s"
-  cluster_identifier = "${aws_rds_cluster.default.cluster_identifier}"
-  engine             = "${aws_rds_cluster.default.engine}"
+  cluster_identifier = "${aws_rds_cluster.test.cluster_identifier}"
+  engine             = "${aws_rds_cluster.test.engine}"
   instance_class     = "db.r5.large"
 }
 
-resource "aws_rds_cluster_activity_stream" "default" {
-  arn  								= "${aws_rds_cluster.default.arn}"
+resource "aws_rds_cluster_activity_stream" "test" {
+  arn  								= "${aws_rds_cluster.test.arn}"
   apply_immediately  	= true
-  kms_key_id 					= "${aws_kms_key.default.arn}"
+  kms_key_id 					= "${aws_kms_key.test.arn}"
   mode         				= "async"
 }
 `, rName)

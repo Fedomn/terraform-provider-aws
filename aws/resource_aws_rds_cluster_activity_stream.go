@@ -76,10 +76,32 @@ func resourceAwsRDSClusterActivityStreamCreate(d *schema.ResourceData, meta inte
 		Mode:             aws.String(mode),
 	}
 
-	_, err := conn.StartActivityStream(startActivityStreamInput)
-	if err != nil {
-		return fmt.Errorf("Error creating RDS Cluster Activity Stream: %s", err)
+	log.Printf("[DEBUG] RDS Cluster start activity stream input: %s", startActivityStreamInput)
+
+	var resp *rds.StartActivityStreamOutput
+	err := resource.Retry(d.Timeout(schema.TimeoutCreate), func() *resource.RetryError {
+		var err error
+		resp, err = conn.StartActivityStream(startActivityStreamInput)
+		if err != nil {
+			if isAWSErr(err, "InvalidParameterCombination", "Activity Streams is not supported for this configuration") {
+				log.Printf("[DEBUG] Occur Error: InvalidParameterCombination, will retring...")
+				return resource.RetryableError(err)
+			}
+			log.Printf("[DEBUG] Occur Error: %s", err)
+			return resource.NonRetryableError(err)
+		}
+		return nil
+	})
+
+	if isResourceTimeoutError(err) {
+		resp, err = conn.StartActivityStream(startActivityStreamInput)
 	}
+
+	if err != nil {
+		return fmt.Errorf("error creating RDS Cluster Activity Stream: %s", err)
+	}
+
+	log.Printf("[DEBUG]: RDS Cluster start activity stream response: %s", resp)
 
 	d.SetId(resourceArn)
 
@@ -112,7 +134,7 @@ func resourceAwsRDSClusterActivityStreamRead(d *schema.ResourceData, meta interf
 	}
 
 	if resp == nil {
-		return fmt.Errorf("Error retrieving RDS cluster: empty response for: %s", input)
+		return fmt.Errorf("error retrieving RDS cluster: empty response for: %s", input)
 	}
 
 	var dbc *rds.DBCluster
@@ -165,7 +187,7 @@ func resourceAwsRDSClusterActivityStreamDelete(d *schema.ResourceData, meta inte
 
 	_, err := conn.StopActivityStream(input)
 	if err != nil {
-		return fmt.Errorf("Error stopping RDS Cluster Activity Stream: %s", err)
+		return fmt.Errorf("error stopping RDS Cluster Activity Stream: %s", err)
 	}
 
 	if err := resourceAwsRDSClusterActivityStreamWaitForStopped(d.Timeout(schema.TimeoutDelete), d.Id(), conn); err != nil {
@@ -189,7 +211,7 @@ func resourceAwsRDSClusterActivityStreamWaitForStarted(timeout time.Duration, id
 
 	_, err := stateConf.WaitForState()
 	if err != nil {
-		return fmt.Errorf("Error waiting for RDS Cluster Activity Stream (%s) to be started: %v", id, err)
+		return fmt.Errorf("error waiting for RDS Cluster Activity Stream (%s) to be started: %v", id, err)
 	}
 	return nil
 }
@@ -208,7 +230,7 @@ func resourceAwsRDSClusterActivityStreamWaitForStopped(timeout time.Duration, id
 
 	_, err := stateConf.WaitForState()
 	if err != nil {
-		return fmt.Errorf("Error waiting for RDS Cluster Activity Stream (%s) to be stopped: %v", id, err)
+		return fmt.Errorf("error waiting for RDS Cluster Activity Stream (%s) to be stopped: %v", id, err)
 	}
 	return nil
 }
@@ -227,7 +249,7 @@ func resourceAwsRDSClusterActivityStreamStateRefreshFunc(conn *rds.RDS, dbCluste
 			} else if resp != nil && len(resp.DBClusters) == 0 {
 				return emptyResp, "destroyed", nil
 			} else {
-				return emptyResp, "", fmt.Errorf("Error on refresh: %+v", err)
+				return emptyResp, "", fmt.Errorf("error on refresh: %+v", err)
 			}
 		}
 

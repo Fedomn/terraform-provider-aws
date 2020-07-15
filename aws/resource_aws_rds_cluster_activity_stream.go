@@ -184,12 +184,32 @@ func resourceAwsRDSClusterActivityStreamUpdate(d *schema.ResourceData, meta inte
 func resourceAwsRDSClusterActivityStreamDelete(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*AWSClient).rdsconn
 
-	input := &rds.StopActivityStreamInput{
+	stopActivityStreamInput := &rds.StopActivityStreamInput{
 		ApplyImmediately: aws.Bool(true),
 		ResourceArn:      aws.String(d.Id()),
 	}
 
-	_, err := conn.StopActivityStream(input)
+	log.Printf("[DEBUG] RDS Cluster stop activity stream input: %s", stopActivityStreamInput)
+
+	var resp *rds.StopActivityStreamOutput
+	err := resource.Retry(d.Timeout(schema.TimeoutDelete), func() *resource.RetryError {
+		var err error
+		resp, err = conn.StopActivityStream(stopActivityStreamInput)
+		if err != nil {
+			if isAWSErr(err, "InvalidParameterCombination", "Database Activity Streams is not enabled for this configuration") {
+				log.Printf("[DEBUG] Database Activity Streams already not exists")
+				return nil
+			}
+			log.Printf("[DEBUG] Stoping Database Activity Streams occur Error: %s", err)
+			return resource.NonRetryableError(err)
+		}
+		return nil
+	})
+
+	if isResourceTimeoutError(err) {
+		resp, err = conn.StopActivityStream(stopActivityStreamInput)
+	}
+
 	if err != nil {
 		return fmt.Errorf("error stopping RDS Cluster Activity Stream: %s", err)
 	}

@@ -57,6 +57,10 @@ func resourceAwsRDSClusterActivityStream() *schema.Resource {
 					"async",
 				}, false),
 			},
+			"kinesis_stream_name": {
+				Type:     schema.TypeString,
+				Computed: true,
+			},
 		},
 	}
 }

@@ -81,6 +81,114 @@ func TestAccAWSRDSClusterActivityStream_disappears(t *testing.T) {
 	})
 }
 
+func TestAccAWSRDSClusterActivityStream_kmsKeyId(t *testing.T) {
+	var dbCluster rds.DBCluster
+	rName := acctest.RandString(5)
+	resourceName := "aws_rds_cluster_activity_stream.test"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckAWSClusterActivityStreamDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccAWSClusterActivityStreamConfig(rName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckAWSRDSClusterActivityStreamExists(resourceName, &dbCluster),
+					testAccCheckAWSRDSClusterActivityStreamAttributes(&dbCluster),
+					resource.TestCheckResourceAttrSet(resourceName, "kms_key_id"),
+				),
+			},
+			{
+				ResourceName:            resourceName,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"apply_immediately"},
+			},
+			{
+				Config: testAccAWSClusterActivityStreamConfig_kmsKeyId(rName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckAWSRDSClusterActivityStreamExists(resourceName, &dbCluster),
+					testAccCheckAWSRDSClusterActivityStreamAttributes(&dbCluster),
+					resource.TestCheckResourceAttrSet(resourceName, "kms_key_id"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccAWSRDSClusterActivityStream_mode(t *testing.T) {
+	var dbCluster rds.DBCluster
+	rName := acctest.RandString(5)
+	resourceName := "aws_rds_cluster_activity_stream.test"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckAWSClusterActivityStreamDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccAWSClusterActivityStreamConfig(rName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckAWSRDSClusterActivityStreamExists(resourceName, &dbCluster),
+					testAccCheckAWSRDSClusterActivityStreamAttributes(&dbCluster),
+					resource.TestCheckResourceAttr(resourceName, "mode", "async"),
+				),
+			},
+			{
+				ResourceName:            resourceName,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"apply_immediately"},
+			},
+			{
+				Config: testAccAWSClusterActivityStreamConfig_modeSync(rName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckAWSRDSClusterActivityStreamExists(resourceName, &dbCluster),
+					testAccCheckAWSRDSClusterActivityStreamAttributes(&dbCluster),
+					resource.TestCheckResourceAttr(resourceName, "mode", "sync"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccAWSRDSClusterActivityStream_arn(t *testing.T) {
+	var dbCluster rds.DBCluster
+	rName := acctest.RandString(5)
+	resourceName := "aws_rds_cluster_activity_stream.test"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckAWSClusterActivityStreamDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccAWSClusterActivityStreamConfig(rName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckAWSRDSClusterActivityStreamExists(resourceName, &dbCluster),
+					testAccCheckAWSRDSClusterActivityStreamAttributes(&dbCluster),
+					testAccMatchResourceAttrRegionalARN(resourceName, "arn", "rds", regexp.MustCompile(fmt.Sprintf("cluster:tf-testacc-aurora-cluster-%s$", rName))),
+				),
+			},
+			{
+				ResourceName:            resourceName,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"apply_immediately"},
+			},
+			{
+				Config: testAccAWSClusterActivityStreamConfig_arn(rName),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckAWSRDSClusterActivityStreamExists(resourceName, &dbCluster),
+					testAccCheckAWSRDSClusterActivityStreamAttributes(&dbCluster),
+					testAccMatchResourceAttrRegionalARN(resourceName, "arn", "rds", regexp.MustCompile(fmt.Sprintf("cluster:tf-testacc-new-aurora-cluster-%s$", rName))),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckAWSRDSClusterActivityStreamExists(resourceName string, dbCluster *rds.DBCluster) resource.TestCheckFunc {
 	return testAccCheckAWSRDSClusterActivityStreamExistsWithProvider(resourceName, dbCluster, testAccProvider)
 }
@@ -89,7 +197,7 @@ func testAccCheckAWSRDSClusterActivityStreamExistsWithProvider(resourceName stri
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[resourceName]
 		if !ok {
-			return fmt.Errorf("Not found: %s", resourceName)
+			return fmt.Errorf("not found: %s", resourceName)
 		}
 
 		if rs.Primary.ID == "" {
@@ -215,7 +323,7 @@ resource "aws_rds_cluster_activity_stream" "test" {
   kms_key_id 					= "${aws_kms_key.test.key_id}"
   mode         				= "async"
 	
-	depends_on = ["aws_rds_cluster.test", "aws_rds_cluster_instance.test"]
+	depends_on = [aws_rds_cluster_instance.test]
 }
 `, rName)
 }
@@ -265,4 +373,130 @@ func testAccCheckAWSRDSClusterActivityStreamDisappears(v *rds.DBCluster) resourc
 
 		return nil
 	}
+}
+
+func testAccAWSClusterActivityStreamConfig_kmsKeyId(rName string) string {
+	return fmt.Sprintf(`
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+resource "aws_kms_key" "new_kms_key" {
+	description             = "tf-testacc-new-kms-key-%[1]s"
+  deletion_window_in_days = 7
+}
+
+resource "aws_rds_cluster" "test" {
+  cluster_identifier              = "tf-testacc-aurora-cluster-%[1]s"
+  engine                  				= "aurora-postgresql"
+  engine_version                  = "10.11"
+	availability_zones  						= ["${data.aws_availability_zones.available.names[0]}", "${data.aws_availability_zones.available.names[1]}", "${data.aws_availability_zones.available.names[2]}"]
+  database_name                   = "mydb"
+  master_username                 = "foo"
+  master_password                 = "mustbeeightcharaters"
+  db_cluster_parameter_group_name = "default.aurora-postgresql10"
+  skip_final_snapshot             = true
+  deletion_protection             = false
+}
+
+resource "aws_rds_cluster_instance" "test" {
+	identifier         = "tf-testacc-aurora-instance-%[1]s"
+  cluster_identifier = "${aws_rds_cluster.test.cluster_identifier}"
+  engine             = "${aws_rds_cluster.test.engine}"
+  instance_class     = "db.r5.large"
+}
+
+resource "aws_rds_cluster_activity_stream" "test" {
+  arn  								= "${aws_rds_cluster.test.arn}"
+  apply_immediately  	= true
+  kms_key_id 					= "${aws_kms_key.new_kms_key.key_id}"
+  mode         				= "async"
+	
+	depends_on = [aws_rds_cluster_instance.test]
+}
+`, rName)
+}
+
+func testAccAWSClusterActivityStreamConfig_modeSync(rName string) string {
+	return fmt.Sprintf(`
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+resource "aws_kms_key" "test" {
+	description             = "tf-testacc-kms-key-%[1]s"
+  deletion_window_in_days = 7
+}
+
+resource "aws_rds_cluster" "test" {
+  cluster_identifier              = "tf-testacc-aurora-cluster-%[1]s"
+  engine                  				= "aurora-postgresql"
+  engine_version                  = "10.11"
+	availability_zones  						= ["${data.aws_availability_zones.available.names[0]}", "${data.aws_availability_zones.available.names[1]}", "${data.aws_availability_zones.available.names[2]}"]
+  database_name                   = "mydb"
+  master_username                 = "foo"
+  master_password                 = "mustbeeightcharaters"
+  db_cluster_parameter_group_name = "default.aurora-postgresql10"
+  skip_final_snapshot             = true
+  deletion_protection             = false
+}
+
+resource "aws_rds_cluster_instance" "test" {
+	identifier         = "tf-testacc-aurora-instance-%[1]s"
+  cluster_identifier = "${aws_rds_cluster.test.cluster_identifier}"
+  engine             = "${aws_rds_cluster.test.engine}"
+  instance_class     = "db.r5.large"
+}
+
+resource "aws_rds_cluster_activity_stream" "test" {
+  arn  								= "${aws_rds_cluster.test.arn}"
+  apply_immediately  	= true
+  kms_key_id 					= "${aws_kms_key.test.key_id}"
+  mode         				= "sync"
+	
+	depends_on = [aws_rds_cluster_instance.test]
+}
+`, rName)
+}
+
+func testAccAWSClusterActivityStreamConfig_arn(rName string) string {
+	return fmt.Sprintf(`
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+resource "aws_kms_key" "test" {
+	description             = "tf-testacc-kms-key-%[1]s"
+  deletion_window_in_days = 7
+}
+
+resource "aws_rds_cluster" "new_rds_cluster_test" {
+  cluster_identifier              = "tf-testacc-new-aurora-cluster-%[1]s"
+  engine                  				= "aurora-postgresql"
+  engine_version                  = "10.11"
+	availability_zones  						= ["${data.aws_availability_zones.available.names[0]}", "${data.aws_availability_zones.available.names[1]}", "${data.aws_availability_zones.available.names[2]}"]
+  database_name                   = "mydb"
+  master_username                 = "foo"
+  master_password                 = "mustbeeightcharaters"
+  db_cluster_parameter_group_name = "default.aurora-postgresql10"
+  skip_final_snapshot             = true
+  deletion_protection             = false
+}
+
+resource "aws_rds_cluster_instance" "new_rds_instance_test" {
+	identifier         = "tf-testacc-new-aurora-instance-%[1]s"
+  cluster_identifier = "${aws_rds_cluster.new_rds_cluster_test.cluster_identifier}"
+  engine             = "${aws_rds_cluster.new_rds_cluster_test.engine}"
+  instance_class     = "db.r5.large"
+}
+
+resource "aws_rds_cluster_activity_stream" "test" {
+  arn  								= "${aws_rds_cluster.new_rds_cluster_test.arn}"
+  apply_immediately  	= true
+  kms_key_id 					= "${aws_kms_key.test.key_id}"
+  mode         				= "async"
+	
+	depends_on = [aws_rds_cluster_instance.new_rds_instance_test]
+}
+`, rName)
 }

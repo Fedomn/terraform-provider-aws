@@ -148,14 +148,12 @@ func resourceAwsRDSClusterActivityStreamRead(d *schema.ResourceData, meta interf
 func resourceAwsRDSClusterActivityStreamUpdate(d *schema.ResourceData, meta interface{}) error {
 	if d.HasChange("arn") || d.HasChange("kms_key_id") || d.HasChange("mode") {
 		log.Printf("[DEBUG] Stopping RDS Cluster Activity Stream before updating")
-		err := resourceAwsRDSClusterActivityStreamDelete(d, meta)
-		if err != nil {
+		if err := resourceAwsRDSClusterActivityStreamDelete(d, meta); err != nil {
 			return err
 		}
 
 		log.Printf("[DEBUG] Starting RDS Cluster Activity Stream")
-		err = resourceAwsRDSClusterActivityStreamCreate(d, meta)
-		if err != nil {
+		if err := resourceAwsRDSClusterActivityStreamCreate(d, meta); err != nil {
 			return err
 		}
 	}
@@ -191,8 +189,8 @@ func resourceAwsRDSClusterActivityStreamWaitForStarted(timeout time.Duration, id
 	log.Printf("[DEBUG] Waiting for RDS Cluster Activity Stream %s to become started...", id)
 
 	stateConf := &resource.StateChangeConf{
-		Pending:    []string{"starting"},
-		Target:     []string{"started"},
+		Pending:    []string{rds.ActivityStreamStatusStarting},
+		Target:     []string{rds.ActivityStreamStatusStarted},
 		Refresh:    resourceAwsRDSClusterActivityStreamStateRefreshFunc(conn, id),
 		Timeout:    timeout,
 		Delay:      AWSRDSClusterActivityStreamRetryDelay,
@@ -210,8 +208,8 @@ func resourceAwsRDSClusterActivityStreamWaitForStopped(timeout time.Duration, id
 	log.Printf("[DEBUG] Waiting for RDS Cluster Activity Stream %s to become stopped...", id)
 
 	stateConf := &resource.StateChangeConf{
-		Pending:    []string{"stopping"},
-		Target:     []string{"stopped"},
+		Pending:    []string{rds.ActivityStreamStatusStopping},
+		Target:     []string{rds.ActivityStreamStatusStopped},
 		Refresh:    resourceAwsRDSClusterActivityStreamStateRefreshFunc(conn, id),
 		Timeout:    timeout,
 		Delay:      AWSRDSClusterActivityStreamRetryDelay,
@@ -236,9 +234,9 @@ func resourceAwsRDSClusterActivityStreamStateRefreshFunc(conn *rds.RDS, dbCluste
 		if err != nil {
 			log.Printf("[DEBUG] Refreshing RDS Cluster Activity Stream State. Occur error: %s", err)
 			if isAWSErr(err, rds.ErrCodeDBClusterNotFoundFault, "") {
-				return emptyResp, "destroyed", nil
+				return emptyResp, rds.ActivityStreamStatusStopped, nil
 			} else if resp != nil && len(resp.DBClusters) == 0 {
-				return emptyResp, "destroyed", nil
+				return emptyResp, rds.ActivityStreamStatusStopped, nil
 			} else {
 				return emptyResp, "", fmt.Errorf("error on refresh: %+v", err)
 			}
@@ -246,10 +244,12 @@ func resourceAwsRDSClusterActivityStreamStateRefreshFunc(conn *rds.RDS, dbCluste
 
 		if resp == nil || resp.DBClusters == nil || len(resp.DBClusters) == 0 {
 			log.Printf("[DEBUG] Refreshing RDS Cluster Activity Stream State. Invalid resp: %s", resp)
-			return emptyResp, "destroyed", nil
+			return emptyResp, rds.ActivityStreamStatusStopped, nil
 		}
 
-		log.Printf("[DEBUG] Refreshing RDS Cluster Activity Stream State... %s", *resp.DBClusters[0].ActivityStreamStatus)
-		return resp.DBClusters[0], *resp.DBClusters[0].ActivityStreamStatus, nil
+		cluster := resp.DBClusters[0]
+		status := aws.StringValue(cluster.ActivityStreamStatus)
+		log.Printf("[DEBUG] Refreshing RDS Cluster Activity Stream State... %s", status)
+		return cluster, status, nil
 	}
 }

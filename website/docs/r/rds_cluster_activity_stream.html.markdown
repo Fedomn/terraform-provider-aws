@@ -12,12 +12,11 @@ Manages RDS Aurora Cluster Database Activity Streams.
 
 Database Activity Streams have some limits and requirements, You can refer to the [User Guide][1].
 
-~> **Note:** using `apply_immediately` can result in a
-brief downtime as the server reboots. See the AWS Docs on [RDS Maintenance][2]
-for more information.
+~> **Note:** `apply_immediately` always is true, cannot be modified. 
+Because when apply_immediately=false, terraform cannot get activity stream associated attributes.
 
 ~> **Note:** This resource depends on having one `aws_rds_cluster_instance` created.
-To avoid race conditions when all resources are being created together, you need to add explicit resource 
+To avoid race conditions when all resources are being created together, you need to add explicit resource
 references using the [resource `depends_on` meta-argument](/docs/configuration/resources.html#depends_on-explicit-resource-dependencies).
  
 
@@ -25,13 +24,13 @@ references using the [resource `depends_on` meta-argument](/docs/configuration/r
 
 ```hcl
 resource "aws_rds_cluster" "default" {
-  cluster_identifier      = "aurora-cluster-demo"
-  availability_zones      = ["us-west-2a", "us-west-2b", "us-west-2c"]
-  database_name           = "mydb"
-  master_username         = "foo"
-  master_password         = "mustbeeightcharaters"
-  engine                  = "aurora-postgresql"
-  engine_version          = "10.11"
+  cluster_identifier = "aurora-cluster-demo"
+  availability_zones = ["us-west-2a", "us-west-2b", "us-west-2c"]
+  database_name      = "mydb"
+  master_username    = "foo"
+  master_password    = "mustbeeightcharaters"
+  engine             = "aurora-postgresql"
+  engine_version     = "10.11"
 }
 
 resource "aws_rds_cluster_instance" "default" {
@@ -46,7 +45,7 @@ resource "aws_kms_key" "default" {
 }
 
 resource "aws_rds_cluster_activity_stream" "default" {
-  arn               = aws_rds_cluster.default.arn
+  resource_arn      = aws_rds_cluster.default.arn
   mode              = "async"
   kms_key_id        = aws_kms_key.default.key_id
   apply_immediately = true
@@ -63,10 +62,9 @@ the [AWS official documentation](https://docs.aws.amazon.com/cli/latest/referenc
 
 The following arguments are supported:
 
-* `arn` - (Required, Forces new resources) The Amazon Resource Name (ARN) of the DB cluster.
+* `resource_arn` - (Required, Forces new resources) The Amazon Resource Name (ARN) of the DB cluster.
 * `mode` - (Required, Forces new resources) Specifies the mode of the database activity stream. One of: `sync` , `async` .
 * `kms_key_id` - (Required, Forces new resources) The AWS KMS key identifier used for encrypting messages in the database activity stream.
-* `apply_immediately` - (Optional) Specifies whether or not the database activity stream is to start immediately, or during the next maintenance window. Default is `false`.
 
 
 ## Attributes Reference
@@ -79,7 +77,7 @@ In addition to all arguments above, the following attributes are exported:
 
 ## Import
 
-RDS Aurora Cluster Database Activity Streams can be imported using the `arn`, e.g.
+RDS Aurora Cluster Database Activity Streams can be imported using the `resource_arn`, e.g.
 
 ```
 $ terraform import aws_rds_cluster_activity_stream.default arn:aws:rds:us-west-2:123456789012:cluster:aurora-cluster-demo

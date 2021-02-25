@@ -8,9 +8,9 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/acctest"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/resource"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 )
 
 func init() {
@@ -91,7 +91,7 @@ func TestAccAWSVpcEndpointService_basic(t *testing.T) {
 		CheckDestroy: testAccCheckVpcEndpointServiceDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccVpcEndpointServiceConfig_basic(rName1, rName2),
+				Config: testAccVpcEndpointServiceConfig_NetworkLoadBalancerArns(rName1, rName2),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckVpcEndpointServiceExists(resourceName, &svcCfg),
 					resource.TestCheckResourceAttr(resourceName, "acceptance_required", "false"),
@@ -99,6 +99,7 @@ func TestAccAWSVpcEndpointService_basic(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "allowed_principals.#", "0"),
 					resource.TestCheckResourceAttr(resourceName, "manages_vpc_endpoints", "false"),
 					resource.TestCheckResourceAttr(resourceName, "tags.%", "0"),
+					resource.TestCheckResourceAttr(resourceName, "private_dns_name_configuration.#", "0"),
 					testAccMatchResourceAttrRegionalARN(resourceName, "arn", "ec2", regexp.MustCompile(`vpc-endpoint-service/vpce-svc-.+`)),
 				),
 			},
@@ -167,12 +168,45 @@ func TestAccAWSVpcEndpointService_disappears(t *testing.T) {
 		CheckDestroy: testAccCheckVpcEndpointServiceDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccVpcEndpointServiceConfig_basic(rName1, rName2),
+				Config: testAccVpcEndpointServiceConfig_NetworkLoadBalancerArns(rName1, rName2),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckVpcEndpointServiceExists(resourceName, &svcCfg),
 					testAccCheckResourceDisappears(testAccProvider, resourceAwsVpcEndpointService(), resourceName),
 				),
 				ExpectNonEmptyPlan: true,
+			},
+		},
+	})
+}
+
+func TestAccAWSVpcEndpointService_GatewayLoadBalancerArns(t *testing.T) {
+	var svcCfg ec2.ServiceConfiguration
+	resourceName := "aws_vpc_endpoint_service.test"
+	rName := acctest.RandomWithPrefix("tfacctest") // 32 character limit
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t); testAccPreCheckElbv2GatewayLoadBalancer(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckVpcEndpointServiceDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccVpcEndpointServiceConfig_GatewayLoadBalancerArns(rName, 1),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckVpcEndpointServiceExists(resourceName, &svcCfg),
+					resource.TestCheckResourceAttr(resourceName, "gateway_load_balancer_arns.#", "1"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				Config: testAccVpcEndpointServiceConfig_GatewayLoadBalancerArns(rName, 2),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckVpcEndpointServiceExists(resourceName, &svcCfg),
+					resource.TestCheckResourceAttr(resourceName, "gateway_load_balancer_arns.#", "2"),
+				),
 			},
 		},
 	})
@@ -217,6 +251,44 @@ func TestAccAWSVpcEndpointService_tags(t *testing.T) {
 					testAccCheckVpcEndpointServiceExists(resourceName, &svcCfg),
 					resource.TestCheckResourceAttr(resourceName, "tags.%", "1"),
 					resource.TestCheckResourceAttr(resourceName, "tags.key2", "value2"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccAWSVpcEndpointService_private_dns_name(t *testing.T) {
+	var svcCfg ec2.ServiceConfiguration
+	resourceName := "aws_vpc_endpoint_service.test"
+	rName1 := acctest.RandomWithPrefix("tf-acc-test")
+	rName2 := acctest.RandomWithPrefix("tf-acc-test")
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:     func() { testAccPreCheck(t) },
+		Providers:    testAccProviders,
+		CheckDestroy: testAccCheckVpcEndpointServiceDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccVpcEndpointServiceConfigPrivateDnsName(rName1, rName2, "example.com"),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckVpcEndpointServiceExists(resourceName, &svcCfg),
+					resource.TestCheckResourceAttr(resourceName, "private_dns_name", "example.com"),
+					resource.TestCheckResourceAttr(resourceName, "private_dns_name_configuration.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "private_dns_name_configuration.0.type", "TXT"),
+				),
+			},
+			{
+				ResourceName:      resourceName,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				Config: testAccVpcEndpointServiceConfigPrivateDnsName(rName1, rName2, "changed.com"),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckVpcEndpointServiceExists(resourceName, &svcCfg),
+					resource.TestCheckResourceAttr(resourceName, "private_dns_name", "changed.com"),
+					resource.TestCheckResourceAttr(resourceName, "private_dns_name_configuration.#", "1"),
+					resource.TestCheckResourceAttr(resourceName, "private_dns_name_configuration.0.type", "TXT"),
 				),
 			},
 		},
@@ -294,8 +366,8 @@ resource "aws_lb" "test1" {
   name = %[1]q
 
   subnets = [
-    "${aws_subnet.test1.id}",
-    "${aws_subnet.test2.id}",
+    aws_subnet.test1.id,
+    aws_subnet.test2.id,
   ]
 
   load_balancer_type         = "network"
@@ -312,8 +384,8 @@ resource "aws_lb" "test2" {
   name = %[2]q
 
   subnets = [
-    "${aws_subnet.test1.id}",
-    "${aws_subnet.test2.id}",
+    aws_subnet.test1.id,
+    aws_subnet.test2.id,
   ]
 
   load_balancer_type         = "network"
@@ -336,9 +408,9 @@ data "aws_availability_zones" "available" {
 }
 
 resource "aws_subnet" "test1" {
-  vpc_id            = "${aws_vpc.test.id}"
+  vpc_id            = aws_vpc.test.id
   cidr_block        = "10.0.1.0/24"
-  availability_zone = "${data.aws_availability_zones.available.names[0]}"
+  availability_zone = data.aws_availability_zones.available.names[0]
 
   tags = {
     Name = %[1]q
@@ -346,9 +418,9 @@ resource "aws_subnet" "test1" {
 }
 
 resource "aws_subnet" "test2" {
-  vpc_id            = "${aws_vpc.test.id}"
+  vpc_id            = aws_vpc.test.id
   cidr_block        = "10.0.2.0/24"
-  availability_zone = "${data.aws_availability_zones.available.names[1]}"
+  availability_zone = data.aws_availability_zones.available.names[1]
 
   tags = {
     Name = %[1]q
@@ -359,18 +431,58 @@ data "aws_caller_identity" "current" {}
 `, rName1, rName2)
 }
 
-func testAccVpcEndpointServiceConfig_basic(rName1, rName2 string) string {
+func testAccVpcEndpointServiceConfig_GatewayLoadBalancerArns(rName string, count int) string {
+	return composeConfig(
+		testAccAvailableAZsNoOptInConfig(),
+		fmt.Sprintf(`
+resource "aws_vpc" "test" {
+  cidr_block = "10.10.10.0/25"
+
+  tags = {
+    Name = "tf-acc-test-load-balancer"
+  }
+}
+
+resource "aws_subnet" "test" {
+  availability_zone = data.aws_availability_zones.available.names[0]
+  cidr_block        = cidrsubnet(aws_vpc.test.cidr_block, 2, 0)
+  vpc_id            = aws_vpc.test.id
+
+  tags = {
+    Name = "tf-acc-test-load-balancer"
+  }
+}
+
+resource "aws_lb" "test" {
+  count = %[2]d
+
+  load_balancer_type = "gateway"
+  name               = "%[1]s-${count.index}"
+
+  subnet_mapping {
+    subnet_id = aws_subnet.test.id
+  }
+}
+
+resource "aws_vpc_endpoint_service" "test" {
+  acceptance_required        = false
+  gateway_load_balancer_arns = aws_lb.test[*].arn
+}
+`, rName, count))
+}
+
+func testAccVpcEndpointServiceConfig_NetworkLoadBalancerArns(rName1, rName2 string) string {
 	return composeConfig(
 		testAccVpcEndpointServiceConfig_base(rName1, rName2),
-		fmt.Sprintf(`
+		`
 resource "aws_vpc_endpoint_service" "test" {
   acceptance_required = false
 
   network_load_balancer_arns = [
-    "${aws_lb.test1.arn}",
+    aws_lb.test1.arn,
   ]
 }
-`))
+`)
 }
 
 func testAccVpcEndpointServiceConfig_allowedPrincipals(rName1, rName2 string) string {
@@ -381,11 +493,11 @@ resource "aws_vpc_endpoint_service" "test" {
   acceptance_required = false
 
   network_load_balancer_arns = [
-    "${aws_lb.test1.arn}",
+    aws_lb.test1.arn,
   ]
 
   allowed_principals = [
-    "${data.aws_caller_identity.current.arn}",
+    data.aws_caller_identity.current.arn,
   ]
 
   tags = {
@@ -403,14 +515,14 @@ resource "aws_vpc_endpoint_service" "test" {
   acceptance_required = true
 
   network_load_balancer_arns = [
-    "${aws_lb.test1.arn}",
-    "${aws_lb.test2.arn}",
+    aws_lb.test1.arn,
+    aws_lb.test2.arn,
   ]
 
   allowed_principals = []
 
   tags = {
-    Name  = %[1]q
+    Name = %[1]q
   }
 }
 `, rName1))
@@ -424,7 +536,7 @@ resource "aws_vpc_endpoint_service" "test" {
   acceptance_required = false
 
   network_load_balancer_arns = [
-    "${aws_lb.test1.arn}",
+    aws_lb.test1.arn,
   ]
 
   tags = {
@@ -442,7 +554,7 @@ resource "aws_vpc_endpoint_service" "test" {
   acceptance_required = false
 
   network_load_balancer_arns = [
-    "${aws_lb.test1.arn}",
+    aws_lb.test1.arn,
   ]
 
   tags = {
@@ -451,4 +563,19 @@ resource "aws_vpc_endpoint_service" "test" {
   }
 }
 `, tagKey1, tagValue1, tagKey2, tagValue2))
+}
+
+func testAccVpcEndpointServiceConfigPrivateDnsName(rName1, rName2, dnsName string) string {
+	return composeConfig(
+		testAccVpcEndpointServiceConfig_base(rName1, rName2),
+		fmt.Sprintf(`
+resource "aws_vpc_endpoint_service" "test" {
+  acceptance_required = false
+  private_dns_name    = "%s"
+
+  network_load_balancer_arns = [
+    aws_lb.test1.arn,
+  ]
+}
+`, dnsName))
 }
